@@ -1,0 +1,15 @@
+.git
+.github
+.gitignore
+node_modules
+src
+tests
+__tests__
+*.test.*
+*.spec.*
+.editorconfig
+.prettierrc
+.eslintrc
+rollup.config.js
+tsconfig.json
+jest.config.js 

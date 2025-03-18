@@ -1,0 +1,77 @@
+{
+	"name": "taozen",
+	"version": "1.0.0",
+	"description": "一个轻量级的任务管理库",
+	"main": "dist/index.js",
+	"module": "dist/index.esm.js",
+	"types": "dist/index.d.ts",
+	"type": "module",
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "rollup -c",
+		"prepublishOnly": "npm run build",
+		"lint": "eslint . --ext .ts",
+		"format": "prettier --write \"src/**/*.ts\"",
+		"dev": "vite",
+		"docs:dev": "vitepress dev docs",
+		"docs:build": "vitepress build docs",
+		"docs:preview": "vitepress preview docs"
+	},
+	"keywords": [
+		"task",
+		"task-management",
+		"task-manager",
+		"task-runner",
+		"task-scheduler",
+		"task-queue",
+		"task-management"
+	],
+	"author": "wangenius@qq.com",
+	"license": "MIT",
+	"devDependencies": {
+		"@rollup/plugin-commonjs": "^25.0.0",
+		"@rollup/plugin-node-resolve": "^15.0.0",
+		"@rollup/plugin-typescript": "^11.0.0",
+		"@types/node": "^16.18.126",
+		"@types/react": "^18.0.0",
+		"@types/react-dom": "^18.0.0",
+		"@typescript-eslint/eslint-plugin": "^5.0.0",
+		"@typescript-eslint/parser": "^5.0.0",
+		"@vitejs/plugin-react": "^4.3.4",
+		"eslint": "^8.0.0",
+		"eslint-config-prettier": "^8.0.0",
+		"eslint-plugin-prettier": "^4.0.0",
+		"gray-matter": "^4.0.3",
+		"prettier": "^2.0.0",
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0",
+		"rollup": "^4.0.0",
+		"tslib": "^2.6.0",
+		"typescript": "^5.0.0",
+		"vite": "^4.5.9",
+		"vitepress": "^1.6.3",
+		"web-vitals": "^2.1.4"
+	},
+	"peerDependencies": {
+		"react": "^18.0.0",
+		"echo-state": ">=1.3.8"
+	},
+	"private": false,
+	"publishConfig": {
+		"access": "public"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/wangenius/taozen.git"
+	},
+	"bugs": {
+		"url": "https://github.com/wangenius/taozen/issues"
+	},
+	"homepage": "https://github.com/wangenius/taozen#readme",
+	"sideEffects": false,
+	"engines": {
+		"node": ">=18.0.0"
+	}
+}
