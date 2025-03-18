@@ -65,6 +65,28 @@ export class Zen<TInput = any, TOutput = any> {
   }
 
   /**
+   * 添加清理函数
+   * @param cleanup - 清理函数
+   */
+  private addCleanup(cleanup: () => void) {
+    this.cleanupFunctions.push(cleanup);
+  }
+
+  /**
+   * 执行清理函数
+   */
+  private executeCleanup() {
+    this.cleanupFunctions.forEach((cleanup) => {
+      try {
+        cleanup();
+      } catch (error) {
+        console.error(`Error during cleanup for zen ${this.name}:`, error);
+      }
+    });
+    this.cleanupFunctions = [];
+  }
+
+  /**
    * 内部执行方法，由 Task 调用
    * @param signal - 中断信号
    * @returns Promise<TOutput> - 执行结果
@@ -113,6 +135,8 @@ export class Zen<TInput = any, TOutput = any> {
       throw error;
     } finally {
       this.endTime = Date.now();
+      // 确保清理函数被执行
+      this.executeCleanup();
     }
   }
 
@@ -142,7 +166,7 @@ export class Zen<TInput = any, TOutput = any> {
 
         return await new Promise<TOutput>((resolve, reject) => {
           // 设置清理函数
-          cleanup = () => {
+          const abortHandler = () => {
             if (this.status !== "cancelled") {
               this.status = "cancelled";
             }
@@ -150,7 +174,10 @@ export class Zen<TInput = any, TOutput = any> {
           };
 
           // 监听取消信号
-          signal.addEventListener("abort", cleanup);
+          signal.addEventListener("abort", abortHandler);
+          this.addCleanup(() =>
+            signal.removeEventListener("abort", abortHandler)
+          );
 
           // 执行实际的任务
           this.executor(dependencyData).then(resolve).catch(reject);
@@ -172,7 +199,7 @@ export class Zen<TInput = any, TOutput = any> {
     } finally {
       // 清理资源
       if (cleanup) {
-        signal.removeEventListener("abort", cleanup);
+        cleanup();
       }
       abortController.abort();
     }
@@ -251,11 +278,15 @@ export class Zen<TInput = any, TOutput = any> {
           }, this.config.timeout);
 
           // 监听中断信号
-          abortListener = () => {
+          const abortHandler = () => {
             clearTimeout(timeoutId);
             reject(new Error("Task cancelled"));
           };
-          signal.addEventListener("abort", abortListener);
+          signal.addEventListener("abort", abortHandler);
+          this.addCleanup(() => {
+            clearTimeout(timeoutId);
+            signal.removeEventListener("abort", abortHandler);
+          });
         }),
       ]);
 
@@ -366,8 +397,7 @@ export class Zen<TInput = any, TOutput = any> {
    */
   dispose() {
     // 执行所有清理函数
-    this.cleanupFunctions.forEach((cleanup) => cleanup());
-    this.cleanupFunctions = [];
+    this.executeCleanup();
     // 清理事件监听器
     if (this.config.onCancel) {
       this.config.onCancel = undefined;

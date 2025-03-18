@@ -146,6 +146,115 @@ const progress = tao.getProgress();
 const executionTime = tao.getExecutionTime();
 ```
 
+## React Hooks 集成
+
+Taozen 提供了 `Tao.use()` 方法，方便在组件中使用任务管理功能。
+
+### 使用 Tao.use()
+
+```typescript
+import { Tao } from "taozen";
+
+function TaskComponent() {
+  // 使用 Tao.use() 获取任务状态
+  const { taos, states, events } = Tao.use();
+
+  // 获取特定任务的状态
+  const taskId = "your-task-id";
+  const taskState = taos[taskId];
+  const taskEvents = events[taskId] || [];
+
+  // 渲染任务状态
+  return (
+    <div>
+      {taskState && (
+        <>
+          <h3>{taskState.name}</h3>
+          <p>状态: {taskState.status}</p>
+          <p>进度: {taskState.progress}%</p>
+          <p>执行时间: {taskState.executionTime}ms</p>
+
+          {/* 渲染步骤状态 */}
+          <div>
+            <h4>步骤列表</h4>
+            {taskState.zens.map((zen) => (
+              <div key={zen.id}>
+                <p>
+                  {zen.name}: {zen.status}
+                </p>
+                {zen.error && <p className="error">{zen.error}</p>}
+              </div>
+            ))}
+          </div>
+
+          {/* 渲染事件历史 */}
+          <div>
+            <h4>事件历史</h4>
+            {taskEvents.map((event, index) => (
+              <div key={index}>
+                <p>
+                  {event.type} - {new Date(event.timestamp).toLocaleString()}
+                </p>
+                {event.error && <p className="error">{event.error.message}</p>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+### 使用选择器优化性能
+
+```typescript
+function TaskProgress() {
+  // 只订阅特定任务的进度
+  const progress = Tao.use(
+    (state) => state.taos["your-task-id"]?.progress ?? 0
+  );
+
+  return (
+    <div>
+      <h3>任务进度</h3>
+      <div className="progress-bar">
+        <div className="progress" style={{ width: `${progress}%` }} />
+      </div>
+      <p>{progress}%</p>
+    </div>
+  );
+}
+```
+
+### 任务控制示例
+
+```typescript
+function TaskControl() {
+  const taskId = "your-task-id";
+
+  const handlePause = async () => {
+    await Tao.pause(taskId);
+  };
+
+  const handleResume = async () => {
+    await Tao.resume(taskId);
+  };
+
+  const handleCancel = async () => {
+    await Tao.cancel(taskId);
+  };
+
+  return (
+    <div>
+      <button onClick={handlePause}>暂停</button>
+      <button onClick={handleResume}>恢复</button>
+      <button onClick={handleCancel}>取消</button>
+    </div>
+  );
+}
+```
+
 ## 高级特性
 
 ### 任务持久化

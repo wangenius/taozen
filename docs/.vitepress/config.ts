@@ -82,79 +82,23 @@ function generateWorkflowSidebar(): SidebarItem[] {
   ];
 }
 
-// 生成API参考侧边栏
-function generateApiSidebar(): SidebarItem[] {
-  const apiDir = path.join(__dirname, "../api");
-
-  function processDirectory(dir: string): SidebarItem[] {
-    const items: SidebarItem[] = [];
-
-    if (!fs.existsSync(dir)) {
-      return items;
-    }
-
-    const files = fs.readdirSync(dir);
-
-    // 处理文件
-    files
-      .filter((file) => file.endsWith(".md"))
-      .forEach((file) => {
-        const fullPath = path.join(dir, file);
-        try {
-          const content = fs.readFileSync(fullPath, "utf-8");
-          const { data } = matter(content);
-
-          const relativePath = path.relative(apiDir, fullPath);
-          const link = `/api/${relativePath.replace(/\.md$/, "")}`;
-
-          items.push({
-            text: data.title || file.replace(".md", ""),
-            link,
-            collapsed: false,
-            order: data.order ?? 100,
-          });
-        } catch (error) {
-          console.error(`处理文件 ${file} 时出错:`, error);
-        }
-      });
-
-    return items.sort((a, b) => {
-      if (a.order !== b.order) {
-        return (a.order ?? 100) - (b.order ?? 100);
-      }
-      return a.text.localeCompare(b.text);
-    });
-  }
-
-  const sidebarItems = processDirectory(apiDir);
-
-  return [
-    {
-      text: "API参考",
-      items: sidebarItems,
-    },
-  ];
-}
-
 export default defineConfig({
-  title: "Echo",
-  description: "轻量级React状态管理库",
-  base: "/echo-state/",
+  title: "Taozen",
+  description: "Taozen 轻量级任务管理库",
+  base: "/taozen/",
   head: [["link", { rel: "icon", href: "./icon.png" }]],
   cleanUrls: true,
   themeConfig: {
     nav: [
       { text: "首页", link: "/" },
-      { text: "教程", link: "/tutorials/echo" },
-      { text: "API参考", link: "/api/echo" },
+      { text: "教程", link: "/tutorials/start" },
     ],
     // 根据路径使用不同的侧边栏
     sidebar: {
       "/tutorials/": generateWorkflowSidebar(),
-      "/api/": generateApiSidebar(),
     },
     socialLinks: [
-      { icon: "github", link: "https://github.com/wangenius/echo" },
+      { icon: "github", link: "https://github.com/wangenius/taozen" },
     ],
   },
 });

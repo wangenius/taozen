@@ -1,17 +1,16 @@
 import { Echo } from "echo-state";
-import { gen } from "./generator";
-import { Zen } from "./Zen";
 import {
-  ZenExecutor,
-  ZenRetryConfig,
-  ZenState,
-  ZenStatus,
   TaoConfig,
   TaoEvent,
   TaoEventListener,
   TaoStatus,
   TaozenEventType,
+  ZenExecutor,
+  ZenRetryConfig,
+  ZenState,
+  ZenStatus,
 } from "./type";
+import { Zen } from "./Zen";
 
 // 添加一个新的接口来描述任务的运行时状态
 export interface TaoRuntimeState {
@@ -32,18 +31,16 @@ export interface TaoRuntimeState {
   }[];
 }
 
+export interface TaoState {
+  taos: Record<string, TaoRuntimeState>;
+  states: Record<string, Map<string, ZenState>>;
+  events: Record<string, TaoEvent[]>;
+}
+
 // Tao类 - 管理整个任务流程
 export class Tao {
   // 静态存储实例，用于管理**注册**任务的状态
-  private static store: Echo<{
-    taos: Record<string, TaoRuntimeState>; // 任务运行时状态映射
-    states: Record<string, Map<string, ZenState>>; // 步骤状态映射
-    events: Record<string, TaoEvent[]>; // 任务事件记录
-  }> = new Echo<{
-    taos: Record<string, TaoRuntimeState>; // 任务运行时状态映射
-    states: Record<string, Map<string, ZenState>>; // 步骤状态映射
-    events: Record<string, TaoEvent[]>; // 任务事件记录
-  }>({
+  private static store: Echo<TaoState> = new Echo<TaoState>({
     taos: {},
     states: {},
     events: {},
@@ -52,7 +49,8 @@ export class Tao {
   });
 
   // 绑定store的use方法
-  static use = Tao.store.use.bind(Tao.store);
+  static use = <T = TaoState>(selector?: (state: TaoState) => T) =>
+    Tao.store.use(selector);
   // 实例属性
   /* 步骤映射 */
   private zens = new Map<string, Zen<any, any>>();
@@ -710,26 +708,6 @@ export class Tao {
 
     traverse(zenId);
     return result;
-  }
-
-  /**
-   * 将任务实例序列化为JSON角色
-   * 包含任务的基本信息和所有步骤的状态
-   * @returns object - 序列化后的JSON角色
-   */
-  toJSON(): object {
-    return {
-      id: gen.id(), // 生成唯一ID
-      name: this.config.name, // 任务名称
-      zens: Array.from(this.zens.entries()).map(([id, zen]) => ({
-        id, // 步骤ID
-        name: zen.getName(), // 步骤名称
-        status: zen.getStatus(), // 步骤状态
-        dependencies: zen.getDependencies(), // 步骤依赖
-        result: zen.getResult(), // 执行结果
-        error: zen.getError()?.message, // 错误信息
-      })),
-    };
   }
 
   /**
