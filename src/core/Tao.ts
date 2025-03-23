@@ -6,6 +6,7 @@ import {
   TaoStatus,
   TaozenEventType,
   ZenExecutor,
+  ZenInput,
   ZenRetryConfig,
   ZenState,
   ZenStatus,
@@ -33,7 +34,7 @@ export interface TaoRuntimeState {
 
 export interface TaoState {
   taos: Record<string, TaoRuntimeState>;
-  states: Record<string, Map<string, ZenState>>;
+  states: Record<string, Record<string, ZenState>>;
   events: Record<string, TaoEvent[]>;
 }
 
@@ -48,9 +49,43 @@ export class Tao {
     name: "taozen-store",
   });
 
+  // 静态初始化块 - 应用启动时执行一次
+  static {
+    Tao.initializeFromStorage();
+  }
+
+  // 从存储中恢复实例
+  static initializeFromStorage() {
+    // 尝试从localStorage恢复所有任务
+    try {
+      const state = Tao.store.current;
+      const taoIds = Object.keys(state.taos || {});
+
+      if (taoIds.length > 0) {
+        console.log(`发现 ${taoIds.length} 个已保存的任务，尝试恢复...`);
+
+        for (const taoId of taoIds) {
+          // 只恢复失败或取消的任务，其他状态的任务可能不需要恢复
+          const taoData = state.taos[taoId];
+          if (taoData.status === "failed" || taoData.status === "cancelled") {
+            Tao.restoreInstance(taoId);
+          }
+        }
+
+        console.log(`恢复完成，当前有 ${Tao.instances.size} 个任务实例`);
+      }
+    } catch (error) {
+      console.error("恢复任务实例时出错:", error);
+    }
+  }
+
   // 绑定store的use方法
   static use = <T = TaoState>(selector?: (state: TaoState) => T) =>
     Tao.store.use(selector);
+
+  static current() {
+    return Tao.store.current;
+  }
   // 实例属性
   /* 步骤映射 */
   private zens = new Map<string, Zen<any, any>>();
@@ -227,14 +262,13 @@ export class Tao {
 
   /**
    * 创建新的任务步骤
-   * @template TInput - 输入参数类型
    * @template TOutput - 输出结果类型
    * @param name - 步骤名称
    * @returns Zen - 创建的步骤实例
    */
-  zen<TInput = any, TOutput = any>(name: string): Zen<TInput, TOutput> {
+  zen<TOutput = any>(name: string): Zen<ZenInput, TOutput> {
     /* 创建新的步骤实例 */
-    const zen = new Zen<TInput, TOutput>(name, this);
+    const zen = new Zen<ZenInput, TOutput>(name, this);
     /* 将步骤添加到步骤映射中 */
     this.zens.set(zen.id, zen);
     /* 返回步骤实例 */
@@ -518,10 +552,10 @@ export class Tao {
    * 获取所有步骤的状态
    * @returns Map<string, ZenState> - 步骤ID到步骤状态的映射
    */
-  getAllZenStates(): Map<string, ZenState> {
-    const states = new Map<string, ZenState>();
+  getAllZenStates(): Record<string, ZenState> {
+    const states: Record<string, ZenState> = {};
     this.zens.forEach((zen) => {
-      states.set(zen.getId(), {
+      states[zen.getId()] = {
         id: zen.getId(),
         name: zen.getName(),
         status: zen.getStatus(),
@@ -529,7 +563,8 @@ export class Tao {
         error: zen.getError(),
         startTime: zen.getStartTime(),
         endTime: zen.getEndTime(),
-      });
+        dependencies: zen.getDependencies(),
+      };
     });
     return states;
   }
@@ -854,7 +889,7 @@ export class Tao {
    */
   static async run<T = any>(
     name: string,
-    executor: ZenExecutor<T>,
+    executor: ZenExecutor<ZenInput, T>,
     options?: {
       retry?: ZenRetryConfig; // 重试配置
       timeout?: number; // 超时时间
@@ -874,7 +909,7 @@ export class Tao {
       tao.register();
     }
     // 创建步骤
-    const zen = tao.zen(name).exe(executor);
+    const zen = tao.zen<T>(name).exe(executor);
 
     if (options?.onCancel) {
       zen.cancel(options.onCancel);
@@ -1165,5 +1200,294 @@ export class Tao {
 
     // 更新任务状态
     await this.updateStatus(isTaoCancelled ? "cancelled" : "failed");
+  }
+
+  /**
+   * 重试任务
+   * 如果任务失败，可以使用此方法重新运行任务
+   * 默认情况下会重新运行所有步骤
+   * 如果配置了retryFailedZensOnly=true，则只重新运行失败的步骤
+   * @returns Promise<Map<string, any>> - 所有步骤的执行结果
+   * @throws Error - 如果任务未失败或未注册则抛出错误
+   */
+  async retry(): Promise<Map<string, any>> {
+    // 检查任务是否可以重试
+    if (this.status !== "failed" && this.status !== "cancelled") {
+      throw new Error("Only failed or cancelled tasks can be retried");
+    }
+
+    // 检查是否已注册
+    if (!this.id) {
+      throw new Error("Tao not registered");
+    }
+
+    // 重置中断控制器
+    this.abortController = new AbortController();
+
+    // 确定需要重置的步骤
+    if (this.config.retryFailedZensOnly) {
+      // 只重置失败的步骤
+      this.zens.forEach((zen) => {
+        if (zen.getStatus() === "failed" || zen.getStatus() === "cancelled") {
+          zen.reset();
+        }
+      });
+    } else {
+      // 重置所有步骤
+      this.zens.forEach((zen) => zen.reset());
+    }
+
+    // 清空运行中的步骤集合
+    this.runningZens.clear();
+
+    // 重置暂停相关状态
+    this.pausePromise = undefined;
+    this.pauseResolve = undefined;
+
+    // 发出任务重试事件
+    this.emit({
+      type: "tao:retry",
+      timestamp: Date.now(),
+    });
+
+    try {
+      // 更新任务状态为运行中
+      await this.updateStatus("running");
+
+      // 执行任务
+      const results = new Map<string, any>();
+      const executionOrder = this.getExecutionOrder();
+
+      // 按批次执行步骤
+      for (const batch of executionOrder) {
+        // 检查是否已取消
+        if (this.abortController.signal.aborted) {
+          await this.updateStatus("cancelled");
+          throw new Error("Tao cancelled");
+        }
+
+        // 并行执行当前批次的步骤
+        await Promise.all(
+          batch.map(async (zenId) => {
+            const zen = this.zens.get(zenId)!;
+
+            // 如果只重试失败的步骤且当前步骤已完成，则跳过
+            if (
+              this.config.retryFailedZensOnly &&
+              zen.getStatus() === "completed"
+            ) {
+              // 已完成的步骤，直接添加结果到结果集
+              results.set(zenId, zen.getResult());
+              return;
+            }
+
+            // 执行需要重试的步骤
+            this.runningZens.add(zenId);
+
+            try {
+              const result = await this.executeZen(zen);
+              results.set(zenId, result);
+              this.runningZens.delete(zenId);
+
+              this.emit({
+                type: "zen:complete",
+                zenId,
+                timestamp: Date.now(),
+                data: result,
+              });
+            } catch (error) {
+              this.runningZens.delete(zenId);
+              throw error;
+            }
+          })
+        );
+      }
+
+      // 最后检查一次是否已取消
+      if (this.abortController.signal.aborted) {
+        await this.updateStatus("cancelled");
+        throw new Error("Tao cancelled");
+      }
+
+      // 更新任务状态为已完成
+      await this.updateStatus("completed");
+      return results;
+    } catch (error) {
+      // 处理执行过程中的错误
+      await this.handleZenError(
+        error instanceof Error ? error : new Error(String(error)),
+        ""
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * 重试指定的任务
+   * @param taoId - 任务ID
+   * @param options - 重试选项
+   * @param options.retryFailedZensOnly - 是否只重试失败的步骤
+   * @returns Promise<boolean> - 是否成功重试
+   */
+  static async retry(
+    taoId: string,
+    options?: { retryFailedZensOnly?: boolean }
+  ): Promise<boolean> {
+    try {
+      const store = Tao.store;
+      const state = store.current;
+      const tao = state.taos[taoId];
+
+      // 检查任务是否存在
+      if (!tao) {
+        console.error(`Tao ${taoId} not found`);
+        return false;
+      }
+
+      // 检查任务状态是否可以重试
+      if (tao.status !== "failed" && tao.status !== "cancelled") {
+        console.error(`Tao ${taoId} is not failed or cancelled, cannot retry`);
+        return false;
+      }
+
+      // 获取任务实例，如果实例不存在则尝试恢复
+      let instance = Tao.instances.get(taoId);
+      if (!instance) {
+        console.log(`尝试从localStorage恢复Tao实例 ${taoId}`);
+        instance = Tao.restoreInstance(taoId);
+
+        if (!instance) {
+          console.error(`无法恢复Tao实例 ${taoId}`);
+          return false;
+        }
+      }
+
+      // 确保实例已初始化
+      if (!instance.id || !instance.zens || instance.zens.size === 0) {
+        console.error(`Tao实例 ${taoId} 未完全初始化，无法重试`);
+        return false;
+      }
+
+      // 应用重试选项
+      if (options && options.retryFailedZensOnly !== undefined) {
+        instance.config.retryFailedZensOnly = options.retryFailedZensOnly;
+      }
+
+      // 执行重试
+      try {
+        await instance.retry();
+        return true;
+      } catch (error) {
+        console.error(`Error retrying tao ${taoId}:`, error);
+        return false;
+      }
+    } catch (error) {
+      console.error("Failed to retry tao:", error);
+      return false;
+    }
+  }
+
+  // 从localStorage恢复Tao实例
+  private static restoreInstance(taoId: string): Tao | undefined {
+    try {
+      const state = Tao.store.current;
+      const taoData = state.taos[taoId];
+
+      if (!taoData) return undefined;
+
+      // 创建新的Tao实例
+      const tao = new Tao({
+        name: taoData.name,
+        description: taoData.description,
+      });
+      tao.id = taoId;
+      tao.status = taoData.status;
+      // 设置已运行标志，以便可以重试
+      tao.hasRun = true;
+
+      // 记录所有创建的zen ID的映射关系，方便后续建立依赖关系
+      const zenIdMap = new Map<string, Zen<any, any>>();
+
+      // 从taoData.zens创建步骤 - 第一步：创建所有Zen实例
+      if (taoData.zens && taoData.zens.length > 0) {
+        for (const zenData of taoData.zens) {
+          // 创建新的Zen实例
+          const zen = tao.zen(zenData.name);
+
+          // 将自动生成的ID保存下来
+          const originalId = zen.id;
+
+          // 直接将Zen添加到映射中，但使用原始ID
+          tao.zens.delete(originalId);
+          tao.zens.set(zenData.id, zen);
+
+          // 保存ID映射关系
+          zenIdMap.set(zenData.id, zen);
+
+          // 使用setter方法设置状态和错误信息，而不是直接修改属性
+          zen.setStatus(zenData.status);
+
+          // 如果是失败状态，设置错误信息
+          if (zenData.error) {
+            zen.setError(new Error(zenData.error));
+          }
+
+          // 确保已完成的步骤不会重新执行
+          if (zenData.status === "completed") {
+            // 由于我们无法直接恢复结果值，这里可能需要特殊处理
+            // 例如：可以在UI上显示"结果已丢失"或类似信息
+            console.log(
+              `步骤 ${zenData.name} (${zenData.id}) 已完成，但结果可能已丢失`
+            );
+          }
+
+          // 确保所有失败或取消的步骤都被重置为pending状态以便重试
+          if (zenData.status === "failed" || zenData.status === "cancelled") {
+            zen.reset();
+            console.log(
+              `步骤 ${zenData.name} (${zenData.id}) 状态已从 ${zenData.status} 重置为 pending，准备重试`
+            );
+          }
+        }
+      }
+
+      // 从存储中读取步骤状态
+      const zenStates = state.states[taoId];
+
+      // 设置依赖关系
+      if (zenStates && Object.keys(zenStates).length > 0) {
+        // 第二步：为每个Zen建立依赖关系
+        for (const zenId in zenStates) {
+          const zenState = zenStates[zenId];
+          const zen = tao.zens.get(zenId);
+
+          if (
+            zen &&
+            zenState.dependencies &&
+            zenState.dependencies.length > 0
+          ) {
+            // 添加每个依赖项
+            for (const depId of zenState.dependencies) {
+              const depZen = tao.zens.get(depId);
+              if (depZen) {
+                zen.after(depZen);
+              } else {
+                console.warn(
+                  `依赖项 ${depId} 不存在，无法为Zen ${zenId} 建立依赖关系`
+                );
+              }
+            }
+          }
+        }
+      }
+
+      // 将恢复的实例添加到instances映射中
+      Tao.instances.set(taoId, tao);
+      console.log(`成功从存储中恢复任务 ${taoId}，步骤数量: ${tao.zens.size}`);
+      return tao;
+    } catch (error) {
+      console.error(`恢复任务 ${taoId} 失败:`, error);
+      return undefined;
+    }
   }
 }

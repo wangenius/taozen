@@ -1,6 +1,12 @@
-import { gen } from "./generator";
+import { gen } from "./gen";
 import { Tao } from "./Tao";
-import { ZenConfig, ZenExecutor, ZenRetryConfig, ZenStatus } from "./type";
+import {
+  ZenConfig,
+  ZenExecutor,
+  ZenInput,
+  ZenRetryConfig,
+  ZenStatus,
+} from "./type";
 
 // Zen类 - 表示任务中的单个执行步骤
 export class Zen<TInput = any, TOutput = any> {
@@ -87,67 +93,111 @@ export class Zen<TInput = any, TOutput = any> {
   }
 
   /**
-   * 内部执行方法，由 Task 调用
+   * 包装依赖结果为ZenInput
+   * @param depResults - 依赖步骤的执行结果
+   * @returns ZenInput - 包装后的输入对象
+   */
+  private wrapDependencyResults(depResults: Record<string, any>): ZenInput {
+    return {
+      get<T>(step: Zen<any, T>): T | undefined {
+        return depResults[step.getId()] as T | undefined;
+      },
+      getById<T>(stepId: string): T | undefined {
+        return depResults[stepId] as T | undefined;
+      },
+      getRaw(): Record<string, any> {
+        return depResults;
+      },
+    };
+  }
+
+  /**
+   * 内部执行方法
    * @param signal - 中断信号
    * @returns Promise<TOutput> - 执行结果
-   * @throws Error - 执行失败时抛出错误
+   * @private
    */
   async _execute(signal: AbortSignal): Promise<TOutput> {
-    // 检查是否已取消
-    if (signal.aborted) {
-      throw new Error("Zen cancelled");
+    // 检查是否正在运行
+    if (this.status === "running") {
+      throw new Error(`Zen ${this.name} is already running`);
     }
 
-    // 初始化执行状态
-    this.status = "running";
-    this.startTime = Date.now();
-    this.value = undefined;
-    this.error = undefined;
-
-    // 发出步骤开始事件
-    this.task.emit({
-      type: "zen:start",
-      zenId: this.id,
-      timestamp: Date.now(),
-    });
+    // 检查任务是否已被取消
+    if (signal.aborted) {
+      this.status = "cancelled";
+      throw new Error("Task cancelled before execution");
+    }
 
     try {
-      // 等待所有依赖完成并获取结果
-      const depResults = await this.waitForDependencies();
+      // 设置状态为正在执行
+      this.status = "running";
+      this.startTime = Date.now();
+      this.endTime = undefined;
+      this.error = undefined;
 
-      // 执行重试逻辑
-      const retryConfig = this.config.retry;
-
-      if (retryConfig) {
-        return await this.executeWithRetry(depResults, signal, retryConfig);
+      // 等待所有依赖完成
+      let dependencyResults: Record<string, any>;
+      try {
+        dependencyResults = await this.waitForDependencies();
+      } catch (error) {
+        this.status = "failed";
+        this.error =
+          error instanceof Error
+            ? error
+            : new Error(`Failed to resolve dependencies: ${String(error)}`);
+        this.endTime = Date.now();
+        throw this.error;
       }
 
-      // 执行超时逻辑
-      if (this.config.timeout) {
-        return await this.executeWithTimeout(depResults, signal);
+      // 包装依赖结果为ZenInput
+      const zenInput = this.wrapDependencyResults(dependencyResults);
+
+      // 根据配置应用重试或超时逻辑
+      let result: TOutput;
+      try {
+        if (this.config.retry) {
+          result = await this.executeWithRetry(
+            zenInput as any,
+            signal,
+            this.config.retry
+          );
+        } else if (this.config.timeout && this.config.timeout > 0) {
+          result = await this.executeWithTimeout(zenInput as any, signal);
+        } else {
+          result = await this.executeCore(zenInput as any, signal);
+        }
+      } catch (error) {
+        // 记录详细错误
+        console.error(`执行Zen步骤 ${this.name} (${this.id}) 失败:`, error);
+        throw error;
       }
 
-      // 普通执行
-      return await this.executeCore(depResults, signal);
+      // 更新状态和结果
+      this.status = "completed";
+      this.value = result;
+      this.endTime = Date.now();
+      return result;
     } catch (error) {
       // 处理执行错误
-      await this.handleZenError(error);
-      throw error;
-    } finally {
       this.endTime = Date.now();
-      // 确保清理函数被执行
+      await this.handleZenError(error);
+      throw error instanceof Error ? error : new Error(String(error));
+    } finally {
+      // 清理临时资源
       this.executeCleanup();
     }
   }
 
   /**
    * 核心执行逻辑
-   * @param depResults - 依赖步骤的执行结果
+   * @param zenInput - 输入参数，包含依赖结果
    * @param signal - 中断信号
    * @returns Promise<TOutput> - 执行结果
+   * @private
    */
   private async executeCore(
-    depResults: Map<string, any>,
+    zenInput: ZenInput,
     signal: AbortSignal
   ): Promise<TOutput> {
     // 创建中断控制器
@@ -162,8 +212,6 @@ export class Zen<TInput = any, TOutput = any> {
 
       // 包装执行器函数
       const wrappedExecutor = async () => {
-        const dependencyData = Object.fromEntries(depResults) as TInput;
-
         return await new Promise<TOutput>((resolve, reject) => {
           // 设置清理函数
           const abortHandler = () => {
@@ -180,7 +228,9 @@ export class Zen<TInput = any, TOutput = any> {
           );
 
           // 执行实际的任务
-          this.executor(dependencyData).then(resolve).catch(reject);
+          this.executor(zenInput as any)
+            .then(resolve)
+            .catch(reject);
         });
       };
 
@@ -207,57 +257,127 @@ export class Zen<TInput = any, TOutput = any> {
 
   /**
    * 重试执行逻辑
-   * @param depResults - 依赖步骤的执行结果
+   * @param zenInput - 输入参数
    * @param signal - 中断信号
    * @param config - 重试配置
    * @returns Promise<TOutput> - 执行结果
    */
   private async executeWithRetry(
-    depResults: Map<string, any>,
+    zenInput: ZenInput,
     signal: AbortSignal,
     config: ZenRetryConfig
   ): Promise<TOutput> {
+    // 确保重试配置有效
+    const retryConfig = {
+      maxAttempts: Math.max(1, config.maxAttempts || 3),
+      initialDelay: Math.max(0, config.initialDelay || 1000),
+      backoffFactor: Math.max(1, config.backoffFactor || 2),
+      maxDelay: Math.max(0, config.maxDelay || 30000),
+    };
+
     let lastError: Error | undefined;
+    let isTaskCancelled = false;
 
     // 循环尝试执行
-    for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+    for (let attempt = 1; attempt <= retryConfig.maxAttempts; attempt++) {
+      // 检查是否已取消
+      if (signal.aborted) {
+        isTaskCancelled = true;
+        throw new Error("Task cancelled during retry");
+      }
+
       try {
-        return await this.executeCore(depResults, signal);
+        // 记录重试尝试
+        if (attempt > 1) {
+          console.log(
+            `Zen ${this.name} (${this.id}): 第 ${attempt}/${retryConfig.maxAttempts} 次重试`
+          );
+        }
+
+        // 执行实际操作
+        return await this.executeCore(zenInput, signal);
       } catch (error) {
-        lastError = error as Error;
-        if (attempt === config.maxAttempts) break;
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // 检查是否任务被取消，如果已取消则不再重试
+        if (
+          error instanceof Error &&
+          (error.message === "Task cancelled" ||
+            error.message === "Task cancelled before execution")
+        ) {
+          isTaskCancelled = true;
+          break;
+        }
+
+        // 判断是否已达到最大重试次数
+        if (attempt === retryConfig.maxAttempts) {
+          console.error(
+            `Zen ${this.name} (${this.id}): 已达到最大重试次数 (${retryConfig.maxAttempts})，不再重试`
+          );
+          break;
+        }
 
         // 计算重试延迟时间
         const delay = Math.min(
-          config.initialDelay * Math.pow(config.backoffFactor, attempt - 1),
-          config.maxDelay
+          retryConfig.initialDelay *
+            Math.pow(retryConfig.backoffFactor, attempt - 1),
+          retryConfig.maxDelay
         );
 
         // 发出重试事件
-        this.task.emit({
-          type: "zen:retry",
-          zenId: this.id,
-          timestamp: Date.now(),
-          data: { attempt, delay },
-          error: error as Error,
-        });
+        try {
+          this.task.emit({
+            type: "zen:retry",
+            zenId: this.id,
+            timestamp: Date.now(),
+            data: { attempt, delay, maxAttempts: retryConfig.maxAttempts },
+            error: lastError,
+          });
+        } catch (emitError) {
+          console.error(`发送重试事件时出错:`, emitError);
+        }
 
         // 等待重试延迟时间
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise((resolve) => {
+          const timeoutId = setTimeout(resolve, delay);
+
+          // 如果任务被取消，清除延迟
+          const abortHandler = () => {
+            clearTimeout(timeoutId);
+            isTaskCancelled = true;
+            resolve(undefined);
+          };
+
+          signal.addEventListener("abort", abortHandler);
+          this.addCleanup(() =>
+            signal.removeEventListener("abort", abortHandler)
+          );
+        });
+
+        // 再次检查是否已取消
+        if (signal.aborted || isTaskCancelled) {
+          throw new Error("Task cancelled during retry wait");
+        }
       }
     }
 
-    throw lastError!;
+    // 如果是被取消的任务，抛出取消错误
+    if (isTaskCancelled) {
+      throw new Error("Task cancelled");
+    }
+
+    // 所有重试都失败，抛出最后一个错误
+    throw lastError || new Error("Unknown error during retry");
   }
 
   /**
    * 超时执行逻辑
-   * @param depResults - 依赖步骤的执行结果
+   * @param zenInput - 输入参数
    * @param signal - 中断信号
    * @returns Promise<TOutput> - 执行结果
    */
   private async executeWithTimeout(
-    depResults: Map<string, any>,
+    zenInput: ZenInput,
     signal: AbortSignal
   ): Promise<TOutput> {
     let timeoutId: NodeJS.Timeout;
@@ -266,7 +386,7 @@ export class Zen<TInput = any, TOutput = any> {
     try {
       // 使用Promise.race实现超时控制
       const result = await Promise.race([
-        this.executeCore(depResults, signal),
+        this.executeCore(zenInput, signal),
         new Promise<never>((_, reject) => {
           // 设置超时定时器
           timeoutId = setTimeout(() => {
@@ -302,20 +422,20 @@ export class Zen<TInput = any, TOutput = any> {
 
   /**
    * 等待依赖步骤完成
-   * @returns Promise<Map<string, any>> - 依赖步骤的执行结果
+   * @returns Promise<Record<string, any>> - 依赖步骤的执行结果
    */
-  private async waitForDependencies(): Promise<Map<string, any>> {
-    if (this.dependencies.size === 0) return new Map();
+  private async waitForDependencies(): Promise<Record<string, any>> {
+    if (this.dependencies.size === 0) return {};
 
-    // 收集所有依赖的结果到 Map 中
-    const results = new Map<string, any>();
+    // 收集所有依赖的结果到对象中
+    const results: Record<string, any> = {};
 
     for (const depId of this.dependencies) {
       const depZen = this.task.getZenById(depId);
       if (depZen.getStatus() === "completed") {
-        results.set(depId, depZen.getResult());
+        results[depId] = depZen.getResult();
       } else {
-        throw new Error(`Dependency ${depZen.getName()} not completed`);
+        throw new Error(`依赖步骤 ${depZen.getName()} 未完成`);
       }
     }
 
@@ -352,11 +472,13 @@ export class Zen<TInput = any, TOutput = any> {
    * 重置步骤状态
    */
   reset() {
+    // 只设置状态和错误，不修改时间戳
     this.status = "pending";
     this.value = undefined;
     this.error = undefined;
-    this.startTime = undefined;
-    this.endTime = undefined;
+    // 不再设置时间戳，它们会在执行时自动设置
+    // this.startTime = undefined;
+    // this.endTime = undefined;
   }
 
   /**
@@ -409,21 +531,39 @@ export class Zen<TInput = any, TOutput = any> {
    * @param error - 错误对象
    */
   private async handleZenError(error: unknown): Promise<void> {
+    // 标准化错误对象
+    const normalizedError =
+      error instanceof Error
+        ? error
+        : new Error(typeof error === "string" ? error : String(error));
+
+    // 确定错误类型和状态
     const isTaskCancelled =
-      error instanceof Error &&
-      (error.message === "Task cancelled" ||
-        error.message === "Task cancelled while paused");
+      normalizedError.message.includes("Task cancelled") ||
+      normalizedError.message.includes("cancelled before execution") ||
+      normalizedError.message.includes("cancelled during retry");
 
     // 更新步骤状态
     this.status = isTaskCancelled ? "cancelled" : "failed";
-    this.error = new Error(String(error));
+    this.error = normalizedError;
 
-    // 发出错误事件
-    this.task.emit({
-      type: "zen:fail",
-      zenId: this.id,
-      timestamp: Date.now(),
-      error: this.error,
-    });
+    // 记录错误信息
+    if (isTaskCancelled) {
+      console.log(`Zen ${this.name} (${this.id}) 已取消`);
+    } else {
+      console.error(`Zen ${this.name} (${this.id}) 执行失败:`, normalizedError);
+    }
+
+    try {
+      // 发出错误事件 - 无论是取消还是失败，都使用zen:fail事件类型
+      this.task.emit({
+        type: "zen:fail",
+        zenId: this.id,
+        timestamp: Date.now(),
+        error: normalizedError,
+      });
+    } catch (emitError) {
+      console.error(`发送错误事件时出错:`, emitError);
+    }
   }
 }

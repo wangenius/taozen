@@ -1,4 +1,6 @@
 /** 定义任务事件类型，用于任务执行过程中的事件通知 */
+import type { Zen } from "./Zen";
+
 export type TaozenEventType =
   | "zen:start" // 步骤开始
   | "zen:complete" // 步骤完成
@@ -10,15 +12,18 @@ export type TaozenEventType =
   | "tao:complete" // 任务完成
   | "tao:fail" // 任务失败
   | "tao:pause" // 任务暂停
-  | "tao:resume"; // 任务恢复
+  | "tao:resume" // 任务恢复
+  | "tao:retry"; // 任务重试
 /**
  * Tao 任务配置接口
  * @property name - 任务名称
  * @property description - 任务描述(可选)
+ * @property retryFailedZensOnly - 重试时是否只重试失败的步骤(可选)，默认false
  */
 export interface TaoConfig {
   name: string;
   description?: string;
+  retryFailedZensOnly?: boolean;
 }
 /**
  * 步骤配置接口
@@ -50,14 +55,27 @@ export type ZenStatus =
 
 /**
  * 执行器类型 - 定义步骤的执行逻辑
- * @template TInput - 输入参数类型
+ * @template TInput - 输入参数类型，通常是ZenInput
  * @template TOutput - 输出结果类型
  * @param input - 执行器的输入参数
  * @returns Promise<TOutput> - 异步执行结果
  */
-export type ZenExecutor<TInput = any, TOutput = any> = (
+export type ZenExecutor<TInput = ZenInput, TOutput = any> = (
   data: TInput
 ) => Promise<TOutput>;
+
+/**
+ * Zen输入接口 - 提供访问依赖步骤结果的方法
+ * 允许步骤通过get方法直接访问依赖步骤的输出结果
+ */
+export interface ZenInput {
+  // 通过步骤实例获取其结果，泛型T会被推断为步骤的输出类型
+  get<T>(step: Zen<any, T>): T | undefined;
+  // 通过步骤ID获取其结果
+  getById<T>(stepId: string): T | undefined;
+  // 获取原始依赖数据
+  getRaw(): Record<string, any>;
+}
 
 /**
  * 重试配置接口
@@ -104,6 +122,7 @@ export type TaoEventListener = (event: TaoEvent) => void;
  * @property error - 错误信息(可选)
  * @property startTime - 开始执行时间(可选)
  * @property endTime - 结束执行时间(可选)
+ * @property dependencies - 依赖关系数组
  */
 export interface ZenState {
   id: string;
@@ -113,4 +132,5 @@ export interface ZenState {
   error?: Error;
   startTime?: number;
   endTime?: number;
+  dependencies?: string[];
 }
