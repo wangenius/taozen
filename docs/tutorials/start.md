@@ -255,6 +255,91 @@ function TaskControl() {
 }
 ```
 
+## 任务重试功能
+
+Taozen 提供了强大的任务重试机制，支持两种重试模式：
+
+1. **全部重试**：重新执行所有步骤
+2. **仅重试失败步骤**：只重新执行失败的步骤，已成功的步骤保留结果
+
+```typescript
+// 创建支持重试的任务
+const tao = new Tao({
+  name: "可重试任务",
+  description: "展示重试功能的任务",
+  retryFailedZensOnly: true, // 设置为true只重试失败步骤，false则重试所有步骤
+});
+
+// 在任务失败后，使用实例方法重试
+try {
+  await tao.run();
+} catch (error) {
+  console.error("任务执行失败:", error);
+
+  // 使用实例方法重试
+  try {
+    const results = await tao.retry();
+    console.log("重试成功:", results);
+  } catch (retryError) {
+    console.error("重试失败:", retryError);
+  }
+}
+```
+
+#### 重试使用示例
+
+```typescript
+// 基于实例重试任务
+const retryTask = async () => {
+  if (!tao) return;
+
+  try {
+    // 重试整个任务，根据retryFailedZensOnly配置决定重试模式
+    await tao.retry();
+    console.log("任务重试成功");
+  } catch (error) {
+    console.error("任务重试失败:", error);
+  }
+};
+
+// 异步步骤执行示例
+const stepWithRetry = tao
+  .zen("可能失败的步骤")
+  .exe(async (input) => {
+    // 某些可能失败的操作
+    if (Math.random() < 0.5) {
+      throw new Error("随机失败");
+    }
+    return "成功结果";
+  })
+  // 单个步骤的重试配置，与任务级重试互补
+  .retry({
+    maxAttempts: 3,
+    initialDelay: 1000,
+  });
+```
+
+#### 获取上游步骤数据
+
+在重试模式下，可以使用`input.get(step)`方法方便地获取依赖步骤的结果：
+
+```typescript
+// 添加依赖另一个步骤的执行步骤
+const step2 = tao
+  .zen("处理数据")
+  .exe(async (input) => {
+    // 直接获取上游步骤的结果
+    const step1Result = input.get(step1);
+
+    // 使用上游数据进行处理
+    return {
+      id: step1Result.id,
+      processedData: `处理后的数据: ${step1Result.value}`,
+    };
+  })
+  .after(step1); // 设置依赖关系
+```
+
 ## 高级特性
 
 ### 任务持久化

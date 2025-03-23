@@ -201,26 +201,6 @@ export const RetryDemo: React.FC = () => {
     }
   };
 
-  // 使用静态方法重试任务
-  const retryTaskStatic = async () => {
-    if (!taskId) return;
-
-    try {
-      setTaskError(null);
-      const success = await Tao.retry(taskId, { retryFailedZensOnly });
-
-      if (!success) {
-        setTaskError("通过静态方法重试任务失败");
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        setTaskError(error.message);
-      } else {
-        setTaskError("任务重试出错");
-      }
-    }
-  };
-
   // 更改重试模式
   const toggleRetryMode = () => {
     // 更新状态变量
@@ -313,23 +293,6 @@ export const RetryDemo: React.FC = () => {
         >
           <ArrowPathIcon className="w-4 h-4 mr-1" />
           实例方法重试
-        </button>
-
-        <button
-          onClick={retryTaskStatic}
-          disabled={
-            !taskId ||
-            (taoState?.status !== "failed" && taoState?.status !== "cancelled")
-          }
-          className={`px-4 py-2 ${
-            !taskId ||
-            (taoState?.status !== "failed" && taoState?.status !== "cancelled")
-              ? "bg-gray-300 cursor-not-allowed"
-              : "bg-green-500 hover:bg-green-600"
-          } text-white rounded-lg transition-colors flex items-center`}
-        >
-          <ArrowPathIcon className="w-4 h-4 mr-1" />
-          静态方法重试
         </button>
 
         <button
