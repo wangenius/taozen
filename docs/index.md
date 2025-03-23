@@ -11,7 +11,7 @@ hero:
 features:
   - icon: 🔄
     title: 任务流程控制
-    details: 支持暂停、恢复、取消等任务控制，灵活管理任务执行流程
+    details: 支持暂停、恢复、取消、重试等任务控制，灵活管理任务执行流程
   - icon: ⚡
     title: 并发控制
     details: 内置并发控制机制，防止系统资源过度占用
