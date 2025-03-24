@@ -21,6 +21,7 @@ export interface TaoRuntimeState {
   progress: number; // 任务进度(0-100)
   paused: boolean; // 是否暂停
   executionTime?: number; // 执行时间(毫秒)
+  startTime?: number; // 任务开始时间
   zens: {
     // 步骤信息数组
     id: string; // 步骤ID
@@ -749,6 +750,7 @@ export class Tao {
       progress: this.getProgress(),
       paused: this.status === "paused",
       executionTime: this.getExecutionTime(),
+      startTime: this.status === "running" ? Date.now() : undefined,
       zens: Array.from(this.zens.values()).map((zen) => ({
         id: zen.getId(),
         name: zen.getName(),
@@ -1034,16 +1036,25 @@ export class Tao {
 
       // 更新存储中的状态
       if (this.id && Tao.store.current.taos?.[this.id]) {
-        Tao.store.set((state) => ({
-          ...state,
-          taos: {
-            ...state.taos,
-            [this.id!]: {
-              ...state.taos[this.id!],
-              status: newStatus,
+        Tao.store.set((state) => {
+          const updatedTao = {
+            ...state.taos[this.id!],
+            status: newStatus,
+          };
+
+          // 当状态为running时，设置startTime
+          if (newStatus === "running" && oldStatus === "pending") {
+            updatedTao.startTime = Date.now();
+          }
+
+          return {
+            ...state,
+            taos: {
+              ...state.taos,
+              [this.id!]: updatedTao,
             },
-          },
-        }));
+          };
+        });
       }
     }
   }
