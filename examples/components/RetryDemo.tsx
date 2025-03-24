@@ -78,8 +78,6 @@ export const RetryDemo: React.FC = () => {
         "步骤2：处理数据"
       )
       .exe(async (input) => {
-        await simulateWork(1500);
-
         // 通过input.get获取步骤1的结果
         const step1Result = input.get(step1);
         if (!step1Result) {
@@ -106,8 +104,6 @@ export const RetryDemo: React.FC = () => {
         "步骤3：验证数据"
       )
       .exe(async (input) => {
-        await simulateWork(1000);
-
         // 通过input.get获取步骤1的结果
         const step1Result = input.get(step1);
         if (!step1Result) {
