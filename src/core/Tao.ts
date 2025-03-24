@@ -953,6 +953,41 @@ export class Tao {
   }
 
   /**
+   * 重试指定的任务
+   * @param taoId - 任务ID
+   * @returns Promise<boolean> - 是否成功开始重试
+   */
+  static async retry(taoId: string): Promise<boolean> {
+    try {
+      const state = Tao.store.current;
+      const tao = state.taos[taoId];
+
+      // 检查任务是否可以重试
+      if (!tao || (tao.status !== "failed" && tao.status !== "cancelled")) {
+        return false;
+      }
+
+      // 获取任务实例
+      const instance = Tao.instances.get(taoId);
+      if (!instance) {
+        return false;
+      }
+
+      // 执行重试
+      try {
+        await instance.retry();
+        return true;
+      } catch (error) {
+        console.error("Error retrying tao:", error);
+        return false;
+      }
+    } catch (error) {
+      console.error("Failed to retry tao:", error);
+      return false;
+    }
+  }
+
+  /**
    * 从存储中移除指定的任务
    * @param taoId - 任务ID
    * @returns boolean - 是否成功移除
