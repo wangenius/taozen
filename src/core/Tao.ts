@@ -75,6 +75,8 @@ export class Tao {
   private id?: string;
   /* 任务状态 */
   private status: TaoStatus = "pending";
+  /* 任务开始时间 */
+  private startTime?: number;
   /* 运行中的步骤集合 */
   private runningZens = new Set<string>();
   /* 任务实例映射 */
@@ -750,7 +752,7 @@ export class Tao {
       progress: this.getProgress(),
       paused: this.status === "paused",
       executionTime: this.getExecutionTime(),
-      startTime: this.status === "running" ? Date.now() : undefined,
+      startTime: this.startTime,
       zens: Array.from(this.zens.values()).map((zen) => ({
         id: zen.getId(),
         name: zen.getName(),
@@ -1044,7 +1046,8 @@ export class Tao {
 
           // 当状态为running时，设置startTime
           if (newStatus === "running" && oldStatus === "pending") {
-            updatedTao.startTime = Date.now();
+            this.startTime = Date.now();
+            updatedTao.startTime = this.startTime;
           }
 
           return {
