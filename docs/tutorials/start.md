@@ -1,182 +1,182 @@
 ---
-title: 开始
+title: Getting Started
 order: 1
 ---
 
-# Taozen 任务管理库
+# Taozen Task Management Library
 
-Taozen 是一个轻量级的任务管理库，专为 React 应用设计，支持多种存储模式和丰富的状态管理功能。
+Taozen is a lightweight task management library designed for React applications, supporting various storage modes and rich state management features.
 
-## 安装
+## Installation
 
 ```bash
 npm install taozen
-# 或
+# or
 yarn add taozen
 ```
 
-## 基本概念
+## Core Concepts
 
-Taozen 的核心概念包括：
+Taozen's core concepts include:
 
-- **Tao（道）**: 表示一个完整的任务流程，包含多个执行步骤
-- **Zen（禅）**: 表示任务中的单个执行步骤，可以设置依赖关系、重试策略等
-- **状态管理**: 使用 Echo 库实现，支持本地存储和状态同步
-- **事件系统**: 支持任务和步骤级别的事件监听
+- **Tao**: Represents a complete task flow containing multiple execution steps
+- **Zen**: Represents an individual execution step in a task, with configurable dependencies, retry strategies, etc.
+- **State Management**: Implemented using the [Echo State Management](https://wangenius.github.io/echo-state/) library, supporting local storage and state synchronization
+- **Event System**: Supports event listening at both task and step levels
 
-## 快速开始
+## Quick Start
 
-### 创建简单任务
+### Creating a Simple Task
 
 ```typescript
 import { Tao } from "taozen";
 
-// 创建一个简单的任务
-const tao = new Tao({ name: "我的任务" });
+// Create a simple task
+const tao = new Tao({ name: "My Task" });
 
-// 添加执行步骤
-const step1 = tao.zen("步骤1").exe(async () => {
-  console.log("执行步骤1");
-  return "步骤1结果";
+// Add execution steps
+const step1 = tao.zen("Step 1").exe(async () => {
+  console.log("Executing Step 1");
+  return "Step 1 Result";
 });
 
 const step2 = tao
-  .zen("步骤2")
-  .after(step1) // 设置依赖关系
+  .zen("Step 2")
+  .after(step1) // Set dependency
   .exe(async (input) => {
-    console.log("执行步骤2，输入:", input);
-    return "步骤2结果";
+    console.log("Executing Step 2, Input:", input);
+    return "Step 2 Result";
   });
 
-// 执行任务
+// Execute the task
 try {
   const results = await tao.run();
-  console.log("任务完成:", results);
+  console.log("Task completed:", results);
 } catch (error) {
-  console.error("任务失败:", error);
+  console.error("Task failed:", error);
 }
 ```
 
-### 使用重试机制
+### Using Retry Mechanism
 
 ```typescript
 const step = tao
-  .zen("重试步骤")
+  .zen("Retry Step")
   .exe(async () => {
-    // 可能失败的操作
-    throw new Error("临时错误");
+    // Operation that might fail
+    throw new Error("Temporary error");
   })
   .retry({
-    maxAttempts: 3, // 最大重试次数
-    initialDelay: 1000, // 初始延迟（毫秒）
-    backoffFactor: 2, // 延迟增长因子
-    maxDelay: 10000, // 最大延迟（毫秒）
+    maxAttempts: 3, // Maximum retry attempts
+    initialDelay: 1000, // Initial delay (milliseconds)
+    backoffFactor: 2, // Delay growth factor
+    maxDelay: 10000, // Maximum delay (milliseconds)
   });
 ```
 
-### 设置超时
+### Setting Timeout
 
 ```typescript
 const step = tao
-  .zen("超时步骤")
+  .zen("Timeout Step")
   .exe(async () => {
-    // 长时间运行的操作
+    // Long-running operation
     await new Promise((resolve) => setTimeout(resolve, 60000));
   })
-  .timeout(5000); // 5秒超时
+  .timeout(5000); // 5 seconds timeout
 ```
 
-### 监听事件
+### Listening to Events
 
 ```typescript
-// 监听任务事件
+// Listen to task events
 tao.on((event) => {
   switch (event.type) {
     case "tao:start":
-      console.log("任务开始");
+      console.log("Task started");
       break;
     case "tao:complete":
-      console.log("任务完成");
+      console.log("Task completed");
       break;
     case "tao:fail":
-      console.log("任务失败:", event.error);
+      console.log("Task failed:", event.error);
       break;
   }
 });
 
-// 监听特定步骤的事件
+// Listen to events from a specific step
 tao.onZen(step1.getId(), (event) => {
   switch (event.type) {
     case "zen:start":
-      console.log("步骤1开始");
+      console.log("Step 1 started");
       break;
     case "zen:complete":
-      console.log("步骤1完成:", event.data);
+      console.log("Step 1 completed:", event.data);
       break;
   }
 });
 ```
 
-### 任务控制
+### Task Control
 
 ```typescript
-// 暂停任务
+// Pause the task
 await tao.pause();
 
-// 恢复任务
+// Resume the task
 await tao.resume();
 
-// 取消任务
+// Cancel the task
 await tao.cancel();
 ```
 
-### 状态管理
+### State Management
 
 ```typescript
-// 注册任务到存储
+// Register the task for storage
 tao.register();
 
-// 获取任务状态
+// Get task status
 const status = tao.getStatus();
 
-// 获取任务进度
+// Get task progress
 const progress = tao.getProgress();
 
-// 获取执行时间
+// Get execution time
 const executionTime = tao.getExecutionTime();
 ```
 
-## React Hooks 集成
+## React Hooks Integration
 
-Taozen 提供了 `Tao.use()` 方法，方便在组件中使用任务管理功能。
+Taozen provides the `Tao.use()` method for easy use of task management features in components.
 
-### 使用 Tao.use()
+### Using Tao.use()
 
 ```typescript
 import { Tao } from "taozen";
 
 function TaskComponent() {
-  // 使用 Tao.use() 获取任务状态
+  // Use Tao.use() to get task state
   const { taos, states, events } = Tao.use();
 
-  // 获取特定任务的状态
+  // Get the state of a specific task
   const taskId = "your-task-id";
   const taskState = taos[taskId];
   const taskEvents = events[taskId] || [];
 
-  // 渲染任务状态
+  // Render task state
   return (
     <div>
       {taskState && (
         <>
           <h3>{taskState.name}</h3>
-          <p>状态: {taskState.status}</p>
-          <p>进度: {taskState.progress}%</p>
-          <p>执行时间: {taskState.executionTime}ms</p>
+          <p>Status: {taskState.status}</p>
+          <p>Progress: {taskState.progress}%</p>
+          <p>Execution time: {taskState.executionTime}ms</p>
 
-          {/* 渲染步骤状态 */}
+          {/* Render step status */}
           <div>
-            <h4>步骤列表</h4>
+            <h4>Step List</h4>
             {taskState.zens.map((zen) => (
               <div key={zen.id}>
                 <p>
@@ -187,9 +187,9 @@ function TaskComponent() {
             ))}
           </div>
 
-          {/* 渲染事件历史 */}
+          {/* Render event history */}
           <div>
-            <h4>事件历史</h4>
+            <h4>Event History</h4>
             {taskEvents.map((event, index) => (
               <div key={index}>
                 <p>
@@ -206,18 +206,18 @@ function TaskComponent() {
 }
 ```
 
-### 使用选择器优化性能
+### Using Selectors for Performance Optimization
 
 ```typescript
 function TaskProgress() {
-  // 只订阅特定任务的进度
+  // Subscribe only to a specific task's progress
   const progress = Tao.use(
     (state) => state.taos["your-task-id"]?.progress ?? 0
   );
 
   return (
     <div>
-      <h3>任务进度</h3>
+      <h3>Task Progress</h3>
       <div className="progress-bar">
         <div className="progress" style={{ width: `${progress}%` }} />
       </div>
@@ -227,7 +227,7 @@ function TaskProgress() {
 }
 ```
 
-### 任务控制示例
+### Task Control Example
 
 ```typescript
 function TaskControl() {
@@ -247,163 +247,163 @@ function TaskControl() {
 
   return (
     <div>
-      <button onClick={handlePause}>暂停</button>
-      <button onClick={handleResume}>恢复</button>
-      <button onClick={handleCancel}>取消</button>
+      <button onClick={handlePause}>Pause</button>
+      <button onClick={handleResume}>Resume</button>
+      <button onClick={handleCancel}>Cancel</button>
     </div>
   );
 }
 ```
 
-## 任务重试功能
+## Task Retry Functionality
 
-Taozen 提供了强大的任务重试机制，支持两种重试模式：
+Taozen provides a powerful task retry mechanism, supporting two retry modes:
 
-1. **全部重试**：重新执行所有步骤
-2. **仅重试失败步骤**：只重新执行失败的步骤，已成功的步骤保留结果
+1. **Retry All**: Re-execute all steps
+2. **Retry Failed Steps Only**: Only re-execute failed steps, preserving results from successful steps
 
 ```typescript
-// 创建支持重试的任务
+// Create a task with retry support
 const tao = new Tao({
-  name: "可重试任务",
-  description: "展示重试功能的任务",
-  retryFailedZensOnly: true, // 设置为true只重试失败步骤，false则重试所有步骤
+  name: "Retryable Task",
+  description: "Task demonstrating retry functionality",
+  retryFailedZensOnly: true, // Set to true to retry only failed steps, false to retry all steps
 });
 
-// 在任务失败后，使用实例方法重试
+// After task failure, use the instance method to retry
 try {
   await tao.run();
 } catch (error) {
-  console.error("任务执行失败:", error);
+  console.error("Task execution failed:", error);
 
-  // 使用实例方法重试
+  // Use instance method to retry
   try {
     const results = await tao.retry();
-    console.log("重试成功:", results);
+    console.log("Retry succeeded:", results);
   } catch (retryError) {
-    console.error("重试失败:", retryError);
+    console.error("Retry failed:", retryError);
   }
 }
 ```
 
-#### 重试使用示例
+#### Retry Usage Example
 
 ```typescript
-// 基于实例重试任务
+// Instance-based task retry
 const retryTask = async () => {
   if (!tao) return;
 
   try {
-    // 重试整个任务，根据retryFailedZensOnly配置决定重试模式
+    // Retry the entire task, retry mode determined by retryFailedZensOnly configuration
     await tao.retry();
-    console.log("任务重试成功");
+    console.log("Task retry succeeded");
   } catch (error) {
-    console.error("任务重试失败:", error);
+    console.error("Task retry failed:", error);
   }
 };
 
-// 异步步骤执行示例
+// Async step execution example with retry
 const stepWithRetry = tao
-  .zen("可能失败的步骤")
+  .zen("Potentially Failing Step")
   .exe(async (input) => {
-    // 某些可能失败的操作
+    // Some operation that might fail
     if (Math.random() < 0.5) {
-      throw new Error("随机失败");
+      throw new Error("Random failure");
     }
-    return "成功结果";
+    return "Success result";
   })
-  // 单个步骤的重试配置，与任务级重试互补
+  // Single step retry configuration, complementary to task-level retry
   .retry({
     maxAttempts: 3,
     initialDelay: 1000,
   });
 ```
 
-#### 获取上游步骤数据
+#### Getting Upstream Step Data
 
-在重试模式下，可以使用`input.get(step)`方法方便地获取依赖步骤的结果：
+In retry mode, you can conveniently get dependency step results using the `input.get(step)` method:
 
 ```typescript
-// 添加依赖另一个步骤的执行步骤
+// Add an execution step that depends on another step
 const step2 = tao
-  .zen("处理数据")
+  .zen("Process Data")
   .exe(async (input) => {
-    // 直接获取上游步骤的结果
+    // Directly get the result from the upstream step
     const step1Result = input.get(step1);
 
-    // 使用上游数据进行处理
+    // Process using upstream data
     return {
       id: step1Result.id,
-      processedData: `处理后的数据: ${step1Result.value}`,
+      processedData: `Processed data: ${step1Result.value}`,
     };
   })
-  .after(step1); // 设置依赖关系
+  .after(step1); // Set dependency relationship
 ```
 
-## 高级特性
+## Advanced Features
 
-### 任务持久化
+### Task Persistence
 
-Taozen 使用 Echo 库实现状态管理，支持本地存储：
+Taozen uses the Echo library for state management, supporting local storage:
 
 ```typescript
-// 任务状态会自动保存到 localStorage
-const tao = new Tao({ name: "持久化任务" });
+// Task state is automatically saved to localStorage
+const tao = new Tao({ name: "Persistent Task" });
 tao.register();
 ```
 
-### 并发控制
+### Concurrency Control
 
-Taozen 内置了并发控制机制，默认最大并发任务数为 10：
+Taozen has a built-in concurrency control mechanism, with a default maximum of 10 concurrent tasks:
 
 ```typescript
-// 修改最大并发任务数
+// Modify maximum concurrent tasks
 Tao.maxConcurrentTaos = 5;
 ```
 
-### 错误处理
+### Error Handling
 
-Taozen 提供了完善的错误处理机制：
+Taozen provides a comprehensive error handling mechanism:
 
 ```typescript
 try {
   await tao.run();
 } catch (error) {
-  // 获取所有步骤的错误
+  // Get all step errors
   const errors = tao.getErrors();
-  console.error("任务执行失败:", errors);
+  console.error("Task execution failed:", errors);
 }
 ```
 
-## 最佳实践
+## Best Practices
 
-1. **任务设计**
+1. **Task Design**
 
-   - 将复杂任务分解为小的、可重用的步骤
-   - 合理设置步骤间的依赖关系
-   - 避免循环依赖
+   - Break complex tasks into small, reusable steps
+   - Set reasonable dependencies between steps
+   - Avoid circular dependencies
 
-2. **错误处理**
+2. **Error Handling**
 
-   - 为关键步骤设置重试机制
-   - 设置合理的超时时间
-   - 实现优雅的错误恢复策略
+   - Set retry mechanisms for critical steps
+   - Set reasonable timeout values
+   - Implement graceful error recovery strategies
 
-3. **状态管理**
+3. **State Management**
 
-   - 及时注册任务以启用状态持久化
-   - 合理使用事件监听器
-   - 定期清理已完成的任务
+   - Register tasks promptly to enable state persistence
+   - Use event listeners judiciously
+   - Regularly clean up completed tasks
 
-4. **性能优化**
-   - 控制并发任务数量
-   - 避免不必要的状态更新
-   - 及时清理资源
+4. **Performance Optimization**
+   - Control the number of concurrent tasks
+   - Avoid unnecessary state updates
+   - Clean up resources promptly
 
-## 注意事项
+## Notes
 
-1. 任务只能执行一次，需要重新创建实例才能再次执行
-2. 运行中的任务不能被删除
-3. 暂停的任务会等待当前步骤完成
-4. 取消任务会中断所有运行中的步骤
-5. 确保正确处理异步操作和资源清理
+1. Tasks can only be executed once; a new instance must be created for re-execution
+2. Running tasks cannot be deleted
+3. Paused tasks will wait for the current step to complete
+4. Canceling a task will interrupt all running steps
+5. Ensure proper handling of asynchronous operations and resource cleanup

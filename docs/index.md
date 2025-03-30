@@ -2,23 +2,23 @@
 layout: home
 hero:
   name: Taozen
-  text: 轻量级任务管理库
-  tagline: 简单、灵活、高效的React任务管理解决方案
+  text: Lightweight Task Management Library
+  tagline: Simple, Flexible, and Efficient Task Management Solution for React
   actions:
     - theme: brand
-      text: 快速开始
+      text: Get Started
       link: /tutorials/start
 features:
   - icon: 🔄
-    title: 任务流程控制
-    details: 支持暂停、恢复、取消、重试等任务控制，灵活管理任务执行流程
+    title: Task Flow Control
+    details: Support for pause, resume, cancel, retry and other task controls, flexible management of task execution flow
   - icon: ⚡
-    title: 并发控制
-    details: 内置并发控制机制，防止系统资源过度占用
+    title: Concurrency Control
+    details: Built-in concurrency control mechanism to prevent excessive system resource consumption
   - icon: ⚛️
-    title: React Hooks集成
-    details: 提供简洁易用的React Hooks API，轻松在组件中使用和订阅状态
+    title: React Hooks Integration
+    details: Provides simple and easy-to-use React Hooks API for easily using and subscribing to state in components
   - icon: 🛠️
-    title: TypeScript支持
-    details: 完全使用TypeScript编写，提供完整的类型定义，增强开发体验
+    title: TypeScript Support
+    details: Fully written in TypeScript with complete type definitions, enhancing development experience
 ---
